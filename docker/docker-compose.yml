@@ -1,0 +1,72 @@
+# docker/docker-compose.yml
+version: '0.0.1'
+
+services:
+  # Optimized services
+  
+  # PostgreSQL Database Service
+  db:
+    image: postgres:latest # Use the official PostgreSQL image
+    container_name: esupa-postgres # Give it a meaningful name
+    environment:
+      POSTGRES_DB: esupa # <-- Change this
+      POSTGRES_USER: postgres # <-- Change this
+      POSTGRES_PASSWORD: 12@esupa # <-- Change this (use a strong password!)
+    volumes:
+      # Mount a named volume to persist data across container restarts/updates
+      - db_data:/var/lib/postgresql/data
+      # Optional: Mount initialization scripts if needed (e.g., for schema setup)
+      # These scripts run on the first start of a new volume
+      # - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    # ports:
+    #   # Optional: Map host port 5432 to container port 5432 (allows external connections, e.g., for tools)
+    #   # Remove this line if only the backend container needs access
+    #   - "5432:5432"
+    healthcheck: # Recommended: Check if the DB is ready
+      test: [ "CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped # Restart if it fails or Docker restarts, unless manually stopped
+  # Spring Boot Backend Service
+  backend:
+    # --- IMPORTANT for Watchtower ---
+    # Watchtower needs to pull from a registry. Use your specific image tag.
+    image: esupa-java-spring:latest # <-- Change this to your Docker Hub image! (using local while in development mode)
+    # If you want to keep the 'build' instruction for local development alongside 'image', you can,
+    # but Watchtower will use the 'image' value for updates from the registry.
+    # build:
+    #   context: ../backend # Path to your backend project directory containing the Dockerfile
+    #   dockerfile: Dockerfile
+    # --- End Watchtower Requirement ---
+    container_name: esupa-java-spring # Meaningful name
+    ports:
+      # Map host port 8080 to container port 8080 (or whatever your Spring app uses)
+      # The Flutter app on the host will connect to localhost:8080
+      - "8080:8080"
+    environment:
+      # Configure Spring to connect to the database service ('db') using its service name
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/esupa # <-- Must match POSTGRES_DB
+      SPRING_DATASOURCE_USERNAME: postgres # <-- Must match POSTGRES_USER
+      SPRING_DATASOURCE_PASSWORD: 12@esupa # <-- Must match POSTGRES_PASSWORD
+      # Add any other Spring environment variables here
+    depends_on:
+      # Ensure the database service is healthy before starting the backend
+      db:
+        condition: service_healthy
+
+    healthcheck: # Recommended: Check if the backend is responsive (requires Spring Boot Actuator & curl in image)
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/actuator/health" ] # Requires curl in the backend image
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+# Define volumes for persistent data
+volumes:
+  db_data: # Data for the PostgreSQL database
+
+# Optional: Define a custom network (Compose creates a default one if not specified, which is usually fine)
+# networks:
+#   your_app_network:
+#     driver: bridge

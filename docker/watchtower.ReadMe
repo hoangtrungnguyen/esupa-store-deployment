@@ -1,0 +1,25 @@
+  # Watchtower Service for Automatic Updates
+  watchtower:
+    image: containrrr/watchtower # Use the official Watchtower image [cite: 17]
+    container_name: watchtower # Give the Watchtower container a name [cite: 17]
+    volumes:
+      # Required: Gives Watchtower control over the Docker daemon to monitor and manage containers [cite: 17]
+      - /var/run/docker.sock:/var/run/docker.sock # [cite: 17]
+    # --- Configuration for Watchtower --- [cite: 17]
+    # command: Arguments passed to Watchtower executable [cite: 18]
+    # --interval 300   Check every 300 seconds (5 minutes). Adjust as needed. [cite: 18]
+    # backend          List the names of services/containers to monitor. Omitting this monitors ALL containers. [cite: 18, 19]
+    # --cleanup        Remove old images after updating [cite: 19]
+    # --debug          Enable debug logging for troubleshooting [cite: 19]
+    command: --interval 300 backend --cleanup # [cite: 19]
+    # Optional: Environment variables for private registry authentication (Less Secure!) [cite: 19]
+    # Preferred: Login on the Docker host using `docker login` [cite: 19]
+    # environment: [cite: 19]
+    #   WATCHTOWER_USER: your_dockerhub_username     # <-- Use only if NOT logged in on host [cite: 19, 20]
+    #   WATCHTOWER_PASSWORD: your_dockerhub_password # <-- Use only if NOT logged in on host (DANGER: Avoid putting passwords here!) [cite: 20]
+    #   WATCHTOWER_REGISTRY: docker.io               # Optional, default for Docker Hub [cite: 20]
+    # Optional: Set timezone for Watchtower logs [cite: 20]
+    # TZ: Asia/Ho_Chi_Minh # <-- Set your timezone [cite: 20]
+    # --- End Configuration ---
+    restart: unless-stopped # Ensure Watchtower starts automatically [cite: 20, 21]
+    # Watchtower doesn't depend on backend/db starting, it just needs Docker to be running. [cite: 21]
