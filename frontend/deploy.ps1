@@ -1,9 +1,9 @@
 # --- Configuration ---
 # Define the path to your project directory
-$PROJECT_DIR = "C:\Users\nguye\StudioProjects\ebond-pos-flutter-windows-app" # <--- !!! CHANGE THIS TO YOUR PROJECT PATH !!!
+$PROJECT_DIR = "C:\Users\Admin\Desktop\pos\ebond-pos-flutter-windows-app" # <--- !!! CHANGE THIS TO YOUR PROJECT PATH !!!
 
 # Define the directory where the appcast XML files are stored
-$APPCAST_DIR = "C:\Users\nguye\OneDrive\Desktop\config\build_app" # <--- !!! CHANGE THIS TO THE DIRECTORY CONTAINING YOUR XML FILES !!!
+$APPCAST_DIR = "C:\Users\Admin\Desktop\pos_deployment" # <--- !!! CHANGE THIS TO THE DIRECTORY CONTAINING YOUR XML FILES !!!
 
 # Define the path to the distribute_options.yaml file
 $DISTRIBUTE_OPTIONS_FILE = Join-Path $PROJECT_DIR "distribute_options.yaml"
@@ -15,8 +15,8 @@ function command_exists {
   param(
     [string]$command
   )
-  Get-Command $command -ErrorAction SilentlyContinue | Out-Null
-  return $LASTEXITCODE -eq 0 # Check if Get-Command found anything
+  # Check if Get-Command returns any object for the command
+  return (Get-Command $command -ErrorAction SilentlyContinue) -ne $null
 }
 
 # Function to install Flutter Distributor
@@ -27,7 +27,7 @@ function install_flutter_distributor {
     Write-Host "Flutter Distributor installed successfully."
   } else {
     Write-Host "Error installing Flutter Distributor. Please install it manually by running 'dart pub global activate flutter_distributor'."
-    exit 1
+    exit break
   }
 }
 
@@ -44,14 +44,16 @@ function install_openssl {
   Write-Host "You may need administrator privileges to run this command."
   Start-Process powershell -ArgumentList "-Command `"Start-Process choco install openssl -Verb runAs`"" -Verb RunAs -Wait -NoNewWindow
   Write-Host "Please wait for the OpenSSL installation to complete and then re-run the script."
-  exit 1
+  break
 }
 
 # Function to install Inno Setup 6
-function install_inno_setup {
-  Write-Host "Inno Setup 6 not found. Please download and install it from: https://jrsoftware.org/isdl.php"
-  exit 1
+function prompt_install_inno_setup {
+  Write-Host "If signing fails with an error mentioning 'Inno Setup 6 was not installed',"
+  Write-Host "Please download and install it from: https://jrsoftware.org/isdl.php"
+  Write-Host "Inno Setup is used by auto_updater to package the .exe installer."
 }
+
 
 # --- Script Start ---
 
@@ -60,7 +62,7 @@ Write-Host "Starting Flutter build and signing process..."
 # Step 1: Check for necessary tools
 Write-Host "Checking for required tools..."
 if (-not (command_exists "flutter_distributor")) { install_flutter_distributor }
-if (-not (command_exists "dart")) { Write-Host "Dart SDK not found. Please install Flutter/Dart."; exit 1; }
+if (-not (command_exists "dart")) { Write-Host "Dart SDK not found. Please install Flutter/Dart."; break; }
 
 # Note: auto_updater is a Dart package, not a global command, so we check for it later.
 # Note: openssl and Inno Setup 6 checks are also done later when needed.
@@ -114,18 +116,26 @@ Read-Host -Prompt "Press Enter to continue..." | Out-Null # Use Out-Null to disc
 
 # Step 5: Run the build command
 Write-Host "Running flutter_distributor release..."
-Set-Location $PROJECT_DIR -ErrorAction Stop
-if ($LASTEXITCODE -ne 0) { Write-Host "Error: Could not change to project directory."; exit 1; }
-
-flutter_distributor release --name $build_name --jobs windows-exe
-$build_status = $LASTEXITCODE
-
-if ($build_status -ne 0) {
-  Write-Host "Flutter build failed. Exiting."
-  break
+Set-Location $PROJECT_DIR -ErrorAction SilentlyContinue
+if (-not $?) { # $? is $false if the last command (Set-Location) failed
+    Write-Host "Error: Could not change to project directory: $PROJECT_DIR"
+    Write-Host "Please ensure the directory exists and you have permissions."
+    Pop-Location # Restore original location
+    exit 1
 }
 
-Write-Host "Flutter build completed."
+Write-Host "Successfully changed to project directory: $(Get-Location)"
+
+flutter_distributor release --name $build_name --jobs windows-exe
+
+# Check the exit code of the last command
+if ($LASTEXITCODE -ne 0) {
+  Write-Host "Error: flutter_distributor release command failed. Exiting."
+  exit 1 # Changed from break
+}
+
+# Updated notification for Step 5 completion
+Write-Host "Flutter packaging (using flutter_distributor) completed successfully."
 
 # Step 6: Rename the generated .exe file based on build type
 # Get version from pubspec.yaml first to find the correct dist folder
@@ -133,7 +143,7 @@ $pubspec_file = Join-Path $PROJECT_DIR "pubspec.yaml"
 Write-Host "pubspec.yaml "
 if (-not (Test-Path $pubspec_file)) {
   Write-Host "Error: pubspec.yaml not found in $PROJECT_DIR. Cannot get version. Exiting."
-  exit 1
+  break
 }
 
 $app_version = ""
@@ -232,7 +242,7 @@ if (-not (dart run auto_updater:sign_update --help 2>&1 | Out-String)) {
 }
 
 # Check for openssl
-# if (-not (command_exists "openssl")) { install_openssl }
+if (-not (command_exists "openssl")) { install_openssl }
 
 # Check for Inno Setup 6 (This check might not be perfect, relies on the error message)
 # A more robust check would involve looking in Program Files, but this is a quick check.
@@ -256,11 +266,11 @@ if ([string]::IsNullOrEmpty($generated_hash) -and ($signing_output -match "Gener
 }
 
 
+  # Step 8: Update sparkle:dsaSignature attribute in appcast.xml
 if ([string]::IsNullOrEmpty($generated_hash)) {
   Write-Host "Warning: Could not extract the generated hash from the signing output."
 } else {
   Write-Host "Generated hash: $generated_hash"
-  # Step 8: Update sparkle:dsaSignature attribute in appcast.xml
   Write-Host "Updating $appcast_file with the generated hash..."
 
   # Load the XML file
